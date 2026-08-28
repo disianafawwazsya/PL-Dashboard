@@ -2,6 +2,7 @@ import React from 'react';
 import {
   LayoutDashboard,
   Table2,
+  Database,
   Network,
   ChevronLeft,
   ChevronRight,
@@ -14,8 +15,8 @@ import {
 } from 'lucide-react';
 
 interface SidebarProps {
-  currentView: 'dashboard' | 'breakdown' | 'hierarchy';
-  onSelectView: (view: 'dashboard' | 'breakdown' | 'hierarchy') => void;
+  currentView: 'dashboard' | 'breakdown' | 'rawLedger' | 'hierarchy';
+  onSelectView: (view: 'dashboard' | 'breakdown' | 'rawLedger' | 'hierarchy') => void;
   isCollapsed: boolean;
   onToggleCollapse: () => void;
   isMobileOpen: boolean;
@@ -46,6 +47,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
       shortLabel: 'Breakdown',
       icon: Table2,
       description: '12-Month full financial matrix & cost drivers',
+    },
+    {
+      id: 'rawLedger',
+      label: 'Actual Ledger (Kolom A:Q)',
+      shortLabel: 'DBeaver A:Q',
+      icon: Database,
+      description: 'DBeaver database table schema columns A to Q',
     },
     {
       id: 'hierarchy',

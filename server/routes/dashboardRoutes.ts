@@ -16,14 +16,78 @@ router.get('/filters', (req: Request, res: Response) => {
   }
 });
 
+// GET /api/raw-ledger - Returns paginated DBeaver database records (Columns A:Q)
+router.get('/raw-ledger', (req: Request, res: Response) => {
+  try {
+    const {
+      page,
+      pageSize,
+      search,
+      year,
+      month,
+      business,
+      sites,
+      tower,
+      industry,
+      jobCode,
+      cat,
+      cost,
+      unit,
+      opg,
+    } = req.query;
+
+    const result = db.getRawLedger({
+      page: page ? Number(page) : 1,
+      pageSize: pageSize ? Number(pageSize) : 50,
+      search: search as string,
+      year: year ? Number(year) : 2026,
+      month: month as string,
+      business: business as string,
+      sites: sites as string,
+      tower: tower as string,
+      industry: industry as string,
+      jobCode: jobCode as string,
+      cat: cat as string,
+      cost: cost as string,
+      unit: unit as string,
+      opg: opg as string,
+    });
+
+    res.json({
+      success: true,
+      data: result,
+    });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 // GET /api/dashboard - Returns aggregated KPI metrics and monthly trend
 router.get('/dashboard', (req: Request, res: Response) => {
   try {
-    const { year, month, reportingGroup, group, unit, opg, project } = req.query;
+    const {
+      year,
+      month,
+      business,
+      sites,
+      tower,
+      industry,
+      jobCode,
+      reportingGroup,
+      group,
+      unit,
+      opg,
+      project,
+    } = req.query;
 
     const summary = db.getDashboardData({
       year: year ? Number(year) : 2026,
       month: (month as string) || 'ALL',
+      business: (business as string) || 'ALL',
+      sites: (sites as string) || 'ALL',
+      tower: (tower as string) || 'ALL',
+      industry: (industry as string) || 'ALL',
+      jobCode: (jobCode as string) || 'ALL',
       reportingGroup: (reportingGroup as string) || 'ALL',
       group: (group as string) || 'ALL',
       unit: (unit as string) || 'ALL',
@@ -43,10 +107,27 @@ router.get('/dashboard', (req: Request, res: Response) => {
 // GET /api/financial-performance - Returns full 12-month matrix breakdown
 router.get('/financial-performance', (req: Request, res: Response) => {
   try {
-    const { year, reportingGroup, group, unit, opg, project } = req.query;
+    const {
+      year,
+      business,
+      sites,
+      tower,
+      industry,
+      jobCode,
+      reportingGroup,
+      group,
+      unit,
+      opg,
+      project,
+    } = req.query;
 
     const matrix = db.getFinancialMatrix({
       year: year ? Number(year) : 2026,
+      business: (business as string) || 'ALL',
+      sites: (sites as string) || 'ALL',
+      tower: (tower as string) || 'ALL',
+      industry: (industry as string) || 'ALL',
+      jobCode: (jobCode as string) || 'ALL',
       reportingGroup: (reportingGroup as string) || 'ALL',
       group: (group as string) || 'ALL',
       unit: (unit as string) || 'ALL',

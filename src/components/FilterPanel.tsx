@@ -1,5 +1,5 @@
-import React, { useMemo } from 'react';
-import { Filter, RotateCcw, Check, Sparkles, SlidersHorizontal, Calendar } from 'lucide-react';
+import React, { useMemo, useState } from 'react';
+import { Filter, RotateCcw, Check, SlidersHorizontal, Calendar, ChevronDown, ChevronUp, Database } from 'lucide-react';
 import { FilterState, FilterTreeResponse } from '../types/dashboard.ts';
 
 interface FilterPanelProps {
@@ -21,10 +21,17 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
   lastUpdated,
   isLoading,
 }) => {
-  // Cascading Dynamic Options Calculation based on hierarchy tree
+  const [showAdvanced, setShowAdvanced] = useState(false);
+
+  // Dynamic Options Calculation based on hierarchy tree & DBeaver dimensions
   const dynamicOptions = useMemo(() => {
     if (!filterTree || !filterTree.hierarchy) {
       return {
+        businesses: ['ALL'],
+        sitesList: ['ALL'],
+        towers: ['ALL'],
+        industries: ['ALL'],
+        jobCodes: ['ALL'],
         groups: ['ALL'],
         units: ['ALL'],
         opgs: ['ALL'],
@@ -35,42 +42,45 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
 
     let records = filterTree.hierarchy;
 
-    // Filter by Reporting Group
-    if (filters.reportingGroup && filters.reportingGroup !== 'ALL') {
-      records = records.filter((r) => r.reportingGroup === filters.reportingGroup);
+    if (filters.business && filters.business !== 'ALL') {
+      records = records.filter((r) => r.business === filters.business);
     }
-
-    const availableGroups = ['ALL', ...Array.from(new Set(records.map((r) => r.groupName))).sort()];
-
-    // Filter by Group
+    if (filters.sites && filters.sites !== 'ALL') {
+      records = records.filter((r) => r.sites === filters.sites);
+    }
+    if (filters.industry && filters.industry !== 'ALL') {
+      records = records.filter((r) => r.industry === filters.industry);
+    }
     if (filters.group && filters.group !== 'ALL') {
       records = records.filter((r) => r.groupName === filters.group);
     }
-
-    const availableUnits = ['ALL', ...Array.from(new Set(records.map((r) => r.unitName))).sort()];
-
-    // Filter by Unit
     if (filters.unit && filters.unit !== 'ALL') {
       records = records.filter((r) => r.unitName === filters.unit);
     }
-
-    const availableOpgs = ['ALL', ...Array.from(new Set(records.map((r) => r.opgName))).sort()];
-
-    // Filter by OPG
     if (filters.opg && filters.opg !== 'ALL') {
       records = records.filter((r) => r.opgName === filters.opg);
     }
 
+    const availableBusinesses = filterTree.businesses || ['ALL', 'LOCAL SERVICES', 'GLOBAL CENTER SERVICES', 'BPO SERVICES'];
+    const availableSites = ['ALL', ...Array.from(new Set(records.map((r) => r.sites).filter(Boolean) as string[])).sort()];
+    const availableTowers = ['ALL', ...Array.from(new Set(records.map((r) => r.tower).filter(Boolean) as string[])).sort()];
+    const availableIndustries = ['ALL', ...Array.from(new Set(records.map((r) => r.industry).filter(Boolean) as string[])).sort()];
+    const availableUnits = ['ALL', ...Array.from(new Set(records.map((r) => r.unitName))).sort()];
+    const availableOpgs = ['ALL', ...Array.from(new Set(records.map((r) => r.opgName))).sort()];
     const availableProjects = ['ALL', ...Array.from(new Set(records.map((r) => r.projectName))).sort()];
 
     return {
-      reportingGroups: filterTree.reportingGroups || ['ALL'],
-      groups: availableGroups,
+      businesses: availableBusinesses,
+      sitesList: availableSites,
+      towers: availableTowers,
+      industries: availableIndustries,
       units: availableUnits,
       opgs: availableOpgs,
       projects: availableProjects,
+      groups: filterTree.groups || ['ALL'],
+      reportingGroups: filterTree.reportingGroups || ['ALL'],
     };
-  }, [filterTree, filters.reportingGroup, filters.group, filters.unit, filters.opg]);
+  }, [filterTree, filters.business, filters.sites, filters.industry, filters.group, filters.unit, filters.opg]);
 
   const months = [
     { value: 'ALL', label: 'Full Year (Jan-Dec)' },
@@ -88,52 +98,27 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
     { value: '12', label: 'Dec - December' },
   ];
 
-  const handleGroupChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const val = e.target.value;
-    onFilterChange({
-      group: val,
-      unit: 'ALL',
-      opg: 'ALL',
-      project: 'ALL',
-    });
-  };
-
-  const handleUnitChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const val = e.target.value;
-    onFilterChange({
-      unit: val,
-      opg: 'ALL',
-      project: 'ALL',
-    });
-  };
-
-  const handleOpgChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const val = e.target.value;
-    onFilterChange({
-      opg: val,
-      project: 'ALL',
-    });
-  };
-
   const activeFiltersCount = [
-    filters.reportingGroup !== 'ALL',
-    filters.group !== 'ALL',
-    filters.unit !== 'ALL',
-    filters.opg !== 'ALL',
-    filters.project !== 'ALL',
-    filters.month !== 'ALL',
+    filters.business && filters.business !== 'ALL',
+    filters.sites && filters.sites !== 'ALL',
+    filters.tower && filters.tower !== 'ALL',
+    filters.industry && filters.industry !== 'ALL',
+    filters.unit && filters.unit !== 'ALL',
+    filters.opg && filters.opg !== 'ALL',
+    filters.project && filters.project !== 'ALL',
+    filters.month && filters.month !== 'ALL',
     filters.year !== 2026,
   ].filter(Boolean).length;
 
   return (
-    <div id="filter-panel-card" className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm transition-all">
+    <div id="filter-panel-card" className="bg-white border border-slate-200/90 rounded-xl p-4 shadow-xs transition-all">
       <div className="flex items-center justify-between gap-3 pb-3 mb-3 border-b border-slate-100">
         <div className="flex items-center gap-2.5">
-          <div className="p-1.5 rounded-lg bg-blue-50 border border-blue-200 text-blue-600">
-            <SlidersHorizontal size={16} />
+          <div className="p-1.5 rounded-lg bg-blue-50 border border-blue-200/60 text-blue-600">
+            <SlidersHorizontal size={15} />
           </div>
           <div>
-            <h2 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+            <h2 className="text-sm font-bold text-slate-800 flex items-center gap-2">
               Performance Dimension Filters
               {activeFiltersCount > 0 && (
                 <span className="px-2 py-0.5 text-[10px] font-bold rounded-full bg-blue-50 text-blue-700 border border-blue-200">
@@ -141,67 +126,77 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
                 </span>
               )}
             </h2>
-            <p className="text-[11px] text-slate-500">Cascading hierarchy filters for targeted financial attribution</p>
+            <p className="text-[11px] text-slate-500">
+              Correlated to DBeaver database dimensions (Columns A through Q)
+            </p>
           </div>
         </div>
 
-        {lastUpdated && (
-          <div className="text-[11px] text-slate-500 flex items-center gap-1.5 hidden sm:flex">
-            <Calendar size={13} className="text-slate-400" />
-            <span>Updated: <strong className="text-slate-700 font-mono">{new Date(lastUpdated).toLocaleTimeString()}</strong></span>
-          </div>
-        )}
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => setShowAdvanced(!showAdvanced)}
+            className="text-xs font-semibold text-blue-600 hover:text-blue-700 flex items-center gap-1"
+          >
+            {showAdvanced ? 'Simple Filters' : 'More Dimensions (Sites, Tower, Industry)'}
+            {showAdvanced ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+          </button>
+
+          {lastUpdated && (
+            <div className="text-[11px] text-slate-400 items-center gap-1.5 hidden sm:flex">
+              <Calendar size={13} className="text-slate-400" />
+              <span>
+                Updated: <strong className="text-slate-600 font-mono">{new Date(lastUpdated).toLocaleTimeString()}</strong>
+              </span>
+            </div>
+          )}
+        </div>
       </div>
 
-      {/* 7 Filter Selectors Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-7 gap-2.5 text-xs">
-        {/* 1. Reporting Group */}
+      {/* Primary Filter Grid */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2.5 text-xs">
+        {/* 1. Col A: Business */}
         <div>
-          <label htmlFor="filter-reporting-group" className="block text-[11px] font-semibold text-slate-600 mb-1">
-            1. Reporting Group
+          <label htmlFor="filter-business" className="block text-[11px] font-semibold text-slate-600 mb-1">
+            1. Business <span className="font-normal text-slate-400">(Col A)</span>
           </label>
           <select
-            id="filter-reporting-group"
-            value={filters.reportingGroup}
-            onChange={(e) => onFilterChange({ reportingGroup: e.target.value, group: 'ALL', unit: 'ALL', opg: 'ALL', project: 'ALL' })}
+            id="filter-business"
+            value={filters.business || 'ALL'}
+            onChange={(e) =>
+              onFilterChange({
+                business: e.target.value,
+                sites: 'ALL',
+                tower: 'ALL',
+                unit: 'ALL',
+                opg: 'ALL',
+                project: 'ALL',
+              })
+            }
             className="w-full bg-slate-50 hover:bg-white focus:bg-white border border-slate-200 text-slate-800 rounded-lg px-2.5 py-1.5 text-xs focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all"
           >
-            {dynamicOptions.reportingGroups.map((rg) => (
-              <option key={rg} value={rg}>
-                {rg === 'ALL' ? 'All Reporting Groups' : rg}
+            {dynamicOptions.businesses.map((biz) => (
+              <option key={biz} value={biz}>
+                {biz === 'ALL' ? 'All Businesses' : biz}
               </option>
             ))}
           </select>
         </div>
 
-        {/* 2. Group */}
-        <div>
-          <label htmlFor="filter-group" className="block text-[11px] font-semibold text-slate-600 mb-1">
-            2. Group
-          </label>
-          <select
-            id="filter-group"
-            value={filters.group}
-            onChange={handleGroupChange}
-            className="w-full bg-slate-50 hover:bg-white focus:bg-white border border-slate-200 text-slate-800 rounded-lg px-2.5 py-1.5 text-xs focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all"
-          >
-            {dynamicOptions.groups.map((grp) => (
-              <option key={grp} value={grp}>
-                {grp === 'ALL' ? 'All Groups' : grp}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        {/* 3. Unit */}
+        {/* 2. Col O: Unit */}
         <div>
           <label htmlFor="filter-unit" className="block text-[11px] font-semibold text-slate-600 mb-1">
-            3. Unit
+            2. Unit <span className="font-normal text-slate-400">(Col O)</span>
           </label>
           <select
             id="filter-unit"
             value={filters.unit}
-            onChange={handleUnitChange}
+            onChange={(e) =>
+              onFilterChange({
+                unit: e.target.value,
+                opg: 'ALL',
+                project: 'ALL',
+              })
+            }
             className="w-full bg-slate-50 hover:bg-white focus:bg-white border border-slate-200 text-slate-800 rounded-lg px-2.5 py-1.5 text-xs focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all"
           >
             {dynamicOptions.units.map((u) => (
@@ -212,15 +207,20 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
           </select>
         </div>
 
-        {/* 4. OPG */}
+        {/* 3. Col N: OPG */}
         <div>
           <label htmlFor="filter-opg" className="block text-[11px] font-semibold text-slate-600 mb-1">
-            4. OPG (Proj Group)
+            3. OPG <span className="font-normal text-slate-400">(Col N)</span>
           </label>
           <select
             id="filter-opg"
             value={filters.opg}
-            onChange={handleOpgChange}
+            onChange={(e) =>
+              onFilterChange({
+                opg: e.target.value,
+                project: 'ALL',
+              })
+            }
             className="w-full bg-slate-50 hover:bg-white focus:bg-white border border-slate-200 text-slate-800 rounded-lg px-2.5 py-1.5 text-xs focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all"
           >
             {dynamicOptions.opgs.map((o) => (
@@ -231,10 +231,10 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
           </select>
         </div>
 
-        {/* 5. Project */}
+        {/* 4. Col G: Job Name / Project */}
         <div>
           <label htmlFor="filter-project" className="block text-[11px] font-semibold text-slate-600 mb-1 truncate">
-            5. Project
+            4. Job / Project <span className="font-normal text-slate-400">(Col G)</span>
           </label>
           <select
             id="filter-project"
@@ -250,10 +250,10 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
           </select>
         </div>
 
-        {/* 6. Year */}
+        {/* 5. Year */}
         <div>
           <label htmlFor="filter-year" className="block text-[11px] font-semibold text-slate-600 mb-1">
-            6. Fiscal Year
+            5. Fiscal Year
           </label>
           <select
             id="filter-year"
@@ -266,10 +266,10 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
           </select>
         </div>
 
-        {/* 7. Month */}
+        {/* 6. Month */}
         <div>
           <label htmlFor="filter-month" className="block text-[11px] font-semibold text-slate-600 mb-1">
-            7. Month View
+            6. Month View <span className="font-normal text-slate-400">(Col E)</span>
           </label>
           <select
             id="filter-month"
@@ -286,21 +286,83 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
         </div>
       </div>
 
+      {/* Advanced Dimensions (Sites, Tower, Industry) */}
+      {showAdvanced && (
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 text-xs mt-3 pt-3 border-t border-slate-100 animate-in fade-in duration-150">
+          {/* Col C: Sites */}
+          <div>
+            <label htmlFor="filter-sites" className="block text-[11px] font-semibold text-slate-600 mb-1">
+              Sites <span className="font-normal text-slate-400">(Col C)</span>
+            </label>
+            <select
+              id="filter-sites"
+              value={filters.sites || 'ALL'}
+              onChange={(e) => onFilterChange({ sites: e.target.value })}
+              className="w-full bg-slate-50 hover:bg-white focus:bg-white border border-slate-200 text-slate-800 rounded-lg px-2.5 py-1.5 text-xs focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all"
+            >
+              {dynamicOptions.sitesList.map((site) => (
+                <option key={site} value={site}>
+                  {site === 'ALL' ? 'All Sites' : site}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Col D: Tower */}
+          <div>
+            <label htmlFor="filter-tower" className="block text-[11px] font-semibold text-slate-600 mb-1">
+              Tower <span className="font-normal text-slate-400">(Col D)</span>
+            </label>
+            <select
+              id="filter-tower"
+              value={filters.tower || 'ALL'}
+              onChange={(e) => onFilterChange({ tower: e.target.value })}
+              className="w-full bg-slate-50 hover:bg-white focus:bg-white border border-slate-200 text-slate-800 rounded-lg px-2.5 py-1.5 text-xs focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all"
+            >
+              {dynamicOptions.towers.map((t) => (
+                <option key={t} value={t}>
+                  {t === 'ALL' ? 'All Towers' : t}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Col P: Industry */}
+          <div>
+            <label htmlFor="filter-industry" className="block text-[11px] font-semibold text-slate-600 mb-1">
+              Industry <span className="font-normal text-slate-400">(Col P)</span>
+            </label>
+            <select
+              id="filter-industry"
+              value={filters.industry || 'ALL'}
+              onChange={(e) => onFilterChange({ industry: e.target.value })}
+              className="w-full bg-slate-50 hover:bg-white focus:bg-white border border-slate-200 text-slate-800 rounded-lg px-2.5 py-1.5 text-xs focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all"
+            >
+              {dynamicOptions.industries.map((ind) => (
+                <option key={ind} value={ind}>
+                  {ind === 'ALL' ? 'All Industries' : ind}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+      )}
+
       {/* Action Controls & Active Tag Pills */}
       <div className="flex flex-wrap items-center justify-between gap-3 mt-3 pt-3 border-t border-slate-100">
         <div className="flex items-center flex-wrap gap-1.5 text-[11px]">
-          <span className="text-slate-500 font-medium mr-1">Active Scope:</span>
+          <span className="text-slate-400 font-medium mr-1">Scope:</span>
           <span className="px-2 py-0.5 rounded bg-slate-100 text-slate-700 font-mono border border-slate-200">
             FY {filters.year}
           </span>
           <span className="px-2 py-0.5 rounded bg-slate-100 text-slate-700 border border-slate-200">
             Month: {filters.month === 'ALL' ? 'Full Year (12M)' : `Month ${filters.month}`}
           </span>
-          {filters.group !== 'ALL' && (
+          {filters.business && filters.business !== 'ALL' && (
             <span className="px-2 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200 flex items-center gap-1 font-medium">
-              Group: {filters.group}
+              Business: {filters.business}
               <button
-                onClick={() => onFilterChange({ group: 'ALL', unit: 'ALL', opg: 'ALL', project: 'ALL' })}
+                onClick={() => onFilterChange({ business: 'ALL' })}
                 className="hover:text-blue-900 font-bold ml-1"
               >
                 ×
@@ -342,7 +404,7 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
             id="filter-btn-apply"
             onClick={onApply}
             disabled={isLoading}
-            className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold shadow-sm shadow-blue-500/30 transition-all disabled:opacity-50"
+            className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold shadow-xs shadow-blue-500/30 transition-all disabled:opacity-50"
           >
             <Check size={14} />
             <span>{isLoading ? 'Aggregating...' : 'Apply Filters'}</span>

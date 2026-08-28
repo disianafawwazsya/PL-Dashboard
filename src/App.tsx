@@ -5,12 +5,18 @@ import { Sidebar } from './components/Sidebar.tsx';
 import { DashboardHeader } from './components/DashboardHeader.tsx';
 import { DashboardView } from './pages/DashboardView.tsx';
 import { BreakdownView } from './pages/BreakdownView.tsx';
+import { RawDataView } from './pages/RawDataView.tsx';
 import { HierarchyView } from './pages/HierarchyView.tsx';
 import { AlertCircle, RefreshCw, Layers } from 'lucide-react';
 
 const INITIAL_FILTERS: FilterState = {
   year: 2026,
   month: 'ALL',
+  business: 'ALL',
+  sites: 'ALL',
+  tower: 'ALL',
+  industry: 'ALL',
+  jobCode: 'ALL',
   reportingGroup: 'ALL',
   group: 'ALL',
   unit: 'ALL',
@@ -19,7 +25,7 @@ const INITIAL_FILTERS: FilterState = {
 };
 
 export default function App() {
-  const [currentView, setCurrentView] = useState<'dashboard' | 'breakdown' | 'hierarchy'>('dashboard');
+  const [currentView, setCurrentView] = useState<'dashboard' | 'breakdown' | 'rawLedger' | 'hierarchy'>('dashboard');
   const [filters, setFilters] = useState<FilterState>(INITIAL_FILTERS);
   const [filterTree, setFilterTree] = useState<FilterTreeResponse | null>(null);
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
@@ -92,6 +98,10 @@ export default function App() {
     if (level === 'ALL') {
       setFilters((prev) => ({
         ...prev,
+        business: 'ALL',
+        sites: 'ALL',
+        tower: 'ALL',
+        industry: 'ALL',
         reportingGroup: 'ALL',
         group: 'ALL',
         unit: 'ALL',
@@ -102,6 +112,7 @@ export default function App() {
       setFilters((prev) => ({
         ...prev,
         group: value || 'ALL',
+        business: value || 'ALL',
         unit: 'ALL',
         opg: 'ALL',
         project: 'ALL',
@@ -131,6 +142,11 @@ export default function App() {
   const handleSelectProjectFromHierarchy = (org: OrgHierarchyItem) => {
     setFilters((prev) => ({
       ...prev,
+      business: org.business || 'ALL',
+      sites: org.sites || 'ALL',
+      tower: org.tower || 'ALL',
+      industry: org.industry || 'ALL',
+      jobCode: org.jobCode || 'ALL',
       reportingGroup: org.reportingGroup,
       group: org.groupName,
       unit: org.unitName,
@@ -143,6 +159,7 @@ export default function App() {
   const handleSelectGroupFromHierarchy = (groupName: string) => {
     setFilters((prev) => ({
       ...prev,
+      business: groupName,
       group: groupName,
       unit: 'ALL',
       opg: 'ALL',
@@ -184,7 +201,7 @@ export default function App() {
         <main className="flex-1 p-4 sm:p-6 max-w-7xl w-full mx-auto space-y-6">
           {/* Error Banner if any */}
           {error && (
-            <div className="bg-rose-50 border border-rose-200 rounded-xl p-4 flex items-start gap-3 text-rose-800 shadow-sm">
+            <div className="bg-rose-50 border border-rose-200 rounded-xl p-4 flex items-start gap-3 text-rose-800 shadow-xs">
               <AlertCircle size={18} className="text-rose-600 shrink-0 mt-0.5" />
               <div className="flex-1">
                 <h4 className="text-xs font-bold text-rose-900">Database Connection Notice</h4>
@@ -230,6 +247,14 @@ export default function App() {
               onSelectHierarchyLevel={handleSelectHierarchyLevel}
               compactCurrency={compactCurrency}
               onToggleCompactCurrency={() => setCompactCurrency((prev) => !prev)}
+            />
+          )}
+
+          {currentView === 'rawLedger' && (
+            <RawDataView
+              filters={filters}
+              filterTree={filterTree}
+              onFilterChange={(k, v) => handleFilterChange({ [k]: v })}
             />
           )}
 

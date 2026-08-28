@@ -1,6 +1,16 @@
 import React, { useState, useMemo } from 'react';
-import { ChevronDown, ChevronRight, Download, Search, Maximize2, Minimize2, Table2, Layers, HelpCircle } from 'lucide-react';
-import { FinancialMatrixResponse } from '../types/dashboard.ts';
+import {
+  ChevronDown,
+  ChevronRight,
+  Download,
+  Search,
+  Maximize2,
+  Minimize2,
+  Table2,
+  Eye,
+  EyeOff,
+} from 'lucide-react';
+import { FinancialMatrixResponse, MatrixRow } from '../types/dashboard.ts';
 import { FinancialRow } from './FinancialRow.tsx';
 import { exportMatrixToCSV } from '../utils/formatters.ts';
 
@@ -11,6 +21,13 @@ interface FinancialTableProps {
   year: number;
 }
 
+interface RowGroupItem {
+  row: MatrixRow;
+  isFirstInGroup: boolean;
+  groupRowSpan: number;
+  groupLabel: string;
+}
+
 export const FinancialTable: React.FC<FinancialTableProps> = ({
   matrixData,
   compactCurrency,
@@ -19,6 +36,7 @@ export const FinancialTable: React.FC<FinancialTableProps> = ({
 }) => {
   const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>({});
   const [searchQuery, setSearchQuery] = useState('');
+  const [showAchievement, setShowAchievement] = useState<boolean>(true);
 
   const toggleSection = (sectionKey: string) => {
     setCollapsedSections((prev) => ({
@@ -31,8 +49,45 @@ export const FinancialTable: React.FC<FinancialTableProps> = ({
   const collapseAll = () => {
     if (!matrixData) return;
     const allCollapsed: Record<string, boolean> = {};
-    matrixData.sections.forEach((s) => (allCollapsed[s.key] = true));
+    matrixData.sections.forEach((s) => (allCollapsed[s.title] = true));
     setCollapsedSections(allCollapsed);
+  };
+
+  // Helper to compute contiguous row groups for rowspan
+  const computeRowGroups = (rows: MatrixRow[]): RowGroupItem[] => {
+    const result: RowGroupItem[] = [];
+    let i = 0;
+    while (i < rows.length) {
+      const currentGroup =
+        rows[i].groupLabel ||
+        (rows[i].category === 'ALL'
+          ? 'All'
+          : rows[i].category === 'DIRECT_COST'
+          ? 'Direct Cost'
+          : 'Indirect Cost');
+      let count = 0;
+      while (
+        i + count < rows.length &&
+        (rows[i + count].groupLabel ||
+          (rows[i + count].category === 'ALL'
+            ? 'All'
+            : rows[i + count].category === 'DIRECT_COST'
+            ? 'Direct Cost'
+            : 'Indirect Cost')) === currentGroup
+      ) {
+        count++;
+      }
+      for (let j = 0; j < count; j++) {
+        result.push({
+          row: rows[i + j],
+          isFirstInGroup: j === 0,
+          groupRowSpan: count,
+          groupLabel: currentGroup,
+        });
+      }
+      i += count;
+    }
+    return result;
   };
 
   // Filter sections by search query
@@ -47,6 +102,7 @@ export const FinancialTable: React.FC<FinancialTableProps> = ({
         rows: sec.rows.filter(
           (r) =>
             r.subcategory.toLowerCase().includes(query) ||
+            (r.groupLabel && r.groupLabel.toLowerCase().includes(query)) ||
             r.category.toLowerCase().includes(query) ||
             r.metric.toLowerCase().includes(query)
         ),
@@ -64,6 +120,8 @@ export const FinancialTable: React.FC<FinancialTableProps> = ({
   }
 
   const months = matrixData.monthNames;
+  const colsPerPeriod = showAchievement ? 3 : 2;
+  const totalTableColSpan = 2 + colsPerPeriod + 12 * colsPerPeriod;
 
   return (
     <div id="financial-matrix-card" className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
@@ -81,7 +139,7 @@ export const FinancialTable: React.FC<FinancialTableProps> = ({
               </span>
             </h3>
             <p className="text-[11px] text-slate-500">
-              Comprehensive 12-Month financial matrix across ALL, Direct Cost, and Indirect Cost categories
+              12-Month matrix with separated & merged Classifications (All, Direct Cost, Indirect Cost)
             </p>
           </div>
         </div>
@@ -96,22 +154,46 @@ export const FinancialTable: React.FC<FinancialTableProps> = ({
               placeholder="Filter row (e.g. Sales, HR)..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="bg-slate-50 border border-slate-200 text-slate-900 placeholder:text-slate-400 rounded-lg pl-8 pr-3 py-1.5 text-xs focus:bg-white focus:ring-1 focus:ring-blue-500 focus:border-blue-500 outline-none w-48 transition-all"
+              className="bg-slate-50 border border-slate-200 text-slate-900 placeholder:text-slate-400 rounded-lg pl-8 pr-3 py-1.5 text-xs focus:bg-white focus:ring-1 focus:ring-blue-500 focus:border-blue-500 outline-none w-44 transition-all"
             />
           </div>
+
+          {/* Toggle % Ach Column Visibility Button */}
+          <button
+            id="table-btn-toggle-ach"
+            onClick={() => setShowAchievement((prev) => !prev)}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-semibold transition-all shadow-2xs ${
+              showAchievement
+                ? 'bg-blue-50 border-blue-300 text-blue-700 hover:bg-blue-100'
+                : 'bg-slate-100 border-slate-300 text-slate-600 hover:bg-slate-200'
+            }`}
+            title={showAchievement ? 'Hide % Ach columns in table' : 'Show % Ach columns in table'}
+          >
+            {showAchievement ? (
+              <>
+                <Eye size={13} className="text-blue-600" />
+                <span>% Ach: Shown</span>
+              </>
+            ) : (
+              <>
+                <EyeOff size={13} className="text-slate-500" />
+                <span>% Ach: Hidden</span>
+              </>
+            )}
+          </button>
 
           {/* Compact Currency Toggle */}
           <button
             id="table-btn-toggle-currency"
             onClick={onToggleCompactCurrency}
-            className={`px-3 py-1.5 rounded-lg border text-xs font-medium transition-colors ${
+            className={`px-3 py-1.5 rounded-lg border text-xs font-medium transition-colors shadow-2xs ${
               compactCurrency
-                ? 'bg-blue-50 border-blue-200 text-blue-700 font-semibold shadow-xs'
+                ? 'bg-purple-50 border-purple-200 text-purple-700 font-semibold'
                 : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
             }`}
             title="Toggle between Compact (Billions/Millions) and Full Rupiah format"
           >
-            {compactCurrency ? 'Format: Compact (B/M)' : 'Format: Full IDR'}
+            {compactCurrency ? 'Format: Compact' : 'Format: Full IDR'}
           </button>
 
           {/* Expand/Collapse All */}
@@ -143,33 +225,41 @@ export const FinancialTable: React.FC<FinancialTableProps> = ({
       </div>
 
       {/* Horizontal Scrollable Table Wrapper */}
-      <div className="overflow-x-auto max-h-[700px] scrollbar-thin scrollbar-thumb-slate-300 scrollbar-track-slate-100">
+      <div className="overflow-x-auto max-h-[720px] scrollbar-thin scrollbar-thumb-slate-300 scrollbar-track-slate-100">
         <table className="w-full text-left border-collapse">
           {/* Sticky Header */}
-          <thead className="sticky top-0 z-20 bg-slate-50 text-slate-800 text-xs shadow-xs border-b-2 border-slate-200">
-            {/* Top Header Row (Category, Full Year, Months) */}
+          <thead className="sticky top-0 z-30 bg-slate-50 text-slate-800 text-xs shadow-xs border-b-2 border-slate-200">
+            {/* Top Header Row (Classification, Line Item, Full Year, Months) */}
             <tr className="border-b border-slate-200">
-              {/* Sticky Category Header */}
+              {/* Sticky Column 1: Classification / Group Header */}
               <th
                 rowSpan={2}
-                className="sticky left-0 z-30 bg-slate-50 px-3.5 py-3 text-left font-bold text-slate-900 min-w-[220px] border-r-2 border-slate-200 shadow-[2px_0_5px_rgba(0,0,0,0.05)]"
+                className="sticky left-0 z-40 bg-slate-950 text-white px-3 py-3 text-center font-extrabold text-xs w-[130px] min-w-[130px] max-w-[130px] border-r border-slate-800 uppercase tracking-wider"
               >
-                Financial Category / Metric
+                Classification
               </th>
 
-              {/* Full Year Summary Header (3 cols) */}
+              {/* Sticky Column 2: Line Item / Metric Header */}
               <th
-                colSpan={3}
+                rowSpan={2}
+                className="sticky left-[130px] z-40 bg-slate-50 text-slate-900 px-3.5 py-3 text-left font-bold text-xs w-[230px] min-w-[230px] border-r-2 border-slate-200 shadow-[2px_0_5px_rgba(0,0,0,0.05)]"
+              >
+                Line Item / Metric
+              </th>
+
+              {/* Full Year Summary Header */}
+              <th
+                colSpan={colsPerPeriod}
                 className="px-3 py-2 text-center font-bold bg-blue-50/70 text-blue-900 border-r-2 border-slate-200"
               >
-                Full Year {year} (FY Aggregate)
+                Full Year {year}
               </th>
 
-              {/* 12 Month Headers (3 cols each) */}
+              {/* 12 Month Headers */}
               {months.map((m) => (
                 <th
                   key={m.month}
-                  colSpan={3}
+                  colSpan={colsPerPeriod}
                   className="px-3 py-2 text-center font-bold bg-slate-50 text-slate-800 border-r border-slate-200"
                 >
                   {m.name}
@@ -177,12 +267,20 @@ export const FinancialTable: React.FC<FinancialTableProps> = ({
               ))}
             </tr>
 
-            {/* Sub-header Row (Actual | Budget | Ach %) */}
+            {/* Sub-header Row (Actual | Budget | [Ach %]) */}
             <tr className="bg-slate-100/70 text-[11px] text-slate-600">
               {/* Full Year Sub-columns */}
               <th className="px-2.5 py-1.5 text-right border-r border-slate-200/80 font-bold text-slate-800">Actual</th>
-              <th className="px-2.5 py-1.5 text-right border-r border-slate-200/80 font-medium">Budget</th>
-              <th className="px-2 py-1.5 text-center border-r-2 border-slate-200 text-blue-700 font-bold">Ach %</th>
+              <th
+                className={`px-2.5 py-1.5 text-right font-medium ${
+                  showAchievement ? 'border-r border-slate-200/80' : 'border-r-2 border-slate-200'
+                }`}
+              >
+                Budget
+              </th>
+              {showAchievement && (
+                <th className="px-2 py-1.5 text-center border-r-2 border-slate-200 text-blue-700 font-bold">Ach %</th>
+              )}
 
               {/* 12 Months Sub-columns */}
               {months.map((m) => (
@@ -190,10 +288,18 @@ export const FinancialTable: React.FC<FinancialTableProps> = ({
                   <th className="px-2.5 py-1.5 text-right border-r border-slate-200/80 font-bold text-slate-800">
                     Actual
                   </th>
-                  <th className="px-2.5 py-1.5 text-right border-r border-slate-200/80 font-medium">Budget</th>
-                  <th className="px-2 py-1.5 text-center border-r border-slate-200 text-blue-700 font-bold">
-                    Ach %
+                  <th
+                    className={`px-2.5 py-1.5 text-right font-medium ${
+                      showAchievement ? 'border-r border-slate-200/80' : 'border-r border-slate-200'
+                    }`}
+                  >
+                    Budget
                   </th>
+                  {showAchievement && (
+                    <th className="px-2 py-1.5 text-center border-r border-slate-200 text-blue-700 font-bold">
+                      Ach %
+                    </th>
+                  )}
                 </React.Fragment>
               ))}
             </tr>
@@ -202,18 +308,19 @@ export const FinancialTable: React.FC<FinancialTableProps> = ({
           {/* Table Body with Accordion Sections */}
           <tbody className="divide-y divide-slate-200">
             {filteredSections.map((section) => {
-              const isCollapsed = !!collapsedSections[section.key];
+              const isCollapsed = !!collapsedSections[section.title];
+              const groupedRows = computeRowGroups(section.rows);
 
               return (
-                <React.Fragment key={section.key}>
+                <React.Fragment key={section.title}>
                   {/* Accordion Section Title Row */}
                   <tr
-                    onClick={() => toggleSection(section.key)}
+                    onClick={() => toggleSection(section.title)}
                     className="bg-slate-100/90 hover:bg-slate-150 cursor-pointer border-t-2 border-b border-slate-200 select-none transition-colors"
                   >
                     <td
-                      colSpan={1 + 3 + 12 * 3}
-                      className="sticky left-0 z-10 bg-slate-100/90 px-4 py-2.5 font-bold text-slate-900 text-xs"
+                      colSpan={totalTableColSpan}
+                      className="sticky left-0 z-20 bg-slate-100/95 px-4 py-2.5 font-bold text-slate-900 text-xs"
                     >
                       <div className="flex items-center gap-2">
                         {isCollapsed ? (
@@ -223,19 +330,23 @@ export const FinancialTable: React.FC<FinancialTableProps> = ({
                         )}
                         <span className="tracking-wide uppercase text-blue-900 font-bold">{section.title}</span>
                         <span className="text-[10px] text-slate-500 font-normal ml-2">
-                          ({section.rows.length} metrics - click to {isCollapsed ? 'expand' : 'collapse'})
+                          ({section.rows.length} line items - click to {isCollapsed ? 'expand' : 'collapse'})
                         </span>
                       </div>
                     </td>
                   </tr>
 
-                  {/* Section Data Rows */}
+                  {/* Section Data Rows with Merged Groups */}
                   {!isCollapsed &&
-                    section.rows.map((row) => (
+                    groupedRows.map((item) => (
                       <FinancialRow
-                        key={`${section.key}-${row.metric}`}
-                        row={row}
+                        key={`${section.title}-${item.row.metric}-${item.row.subcategory}-${item.groupLabel}`}
+                        row={item.row}
                         compactCurrency={compactCurrency}
+                        showAchievement={showAchievement}
+                        isFirstInGroup={item.isFirstInGroup}
+                        groupRowSpan={item.groupRowSpan}
+                        groupLabel={item.groupLabel}
                       />
                     ))}
                 </React.Fragment>
@@ -248,7 +359,13 @@ export const FinancialTable: React.FC<FinancialTableProps> = ({
       {/* Footer Legend & Information */}
       <div className="p-3 bg-slate-50 border-t border-slate-200 flex flex-wrap items-center justify-between gap-3 text-[11px] text-slate-600">
         <div className="flex items-center gap-4">
-          <span className="font-bold text-slate-800">Legend:</span>
+          <span className="font-bold text-slate-800">Display Status:</span>
+          <span className="flex items-center gap-1.5">
+            <span
+              className={`w-2.5 h-2.5 rounded-full ${showAchievement ? 'bg-blue-500' : 'bg-slate-300'}`}
+            ></span>
+            <span>% Ach Column: {showAchievement ? 'Visible' : 'Hidden'}</span>
+          </span>
           <span className="flex items-center gap-1.5">
             <span className="w-4 h-4 rounded bg-emerald-50 border border-emerald-200 text-emerald-700 text-[10px] flex items-center justify-center font-bold">
               ↑
@@ -264,7 +381,7 @@ export const FinancialTable: React.FC<FinancialTableProps> = ({
         </div>
 
         <div className="text-slate-500">
-          Showing 12-Month Financial Aggregation | Scroll horizontally to view all months (Jan - Dec)
+          Showing 12-Month Financial Aggregation | Scroll horizontally to inspect all columns
         </div>
       </div>
     </div>

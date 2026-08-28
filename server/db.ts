@@ -1,11 +1,21 @@
-import { generateSeedData, OrgRecord, FinRecord } from './seedData.ts';
+import {
+  generateSeedData,
+  OrgRecord,
+  FinRecord,
+  RawLedgerItem,
+  DIRECT_HR_EXPENSE_ITEMS,
+  DIRECT_FACILITY_EXPENSE_ITEMS,
+  DIRECT_OTHERS_EXPENSE_ITEMS,
+  INDIRECT_HR_EXPENSE_ITEMS,
+  INDIRECT_FACILITY_EXPENSE_ITEMS,
+  INDIRECT_OTHERS_EXPENSE_ITEMS,
+} from './seedData.ts';
 
-// In-Memory & PostgreSQL Query Engine
-// Provides high-performance parameterized relational aggregation
-
+// In-Memory & Relational Aggregation Engine for DBeaver Data (Columns A:Q) & 4 Report Tables
 class DatabaseEngine {
   private organizations: OrgRecord[] = [];
   private financialRecords: FinRecord[] = [];
+  private rawLedgerRecords: RawLedgerItem[] = [];
   private initialized = false;
 
   constructor() {
@@ -16,8 +26,11 @@ class DatabaseEngine {
     const seed = generateSeedData();
     this.organizations = seed.organizations;
     this.financialRecords = seed.financialRecords;
+    this.rawLedgerRecords = seed.rawLedgerRecords;
     this.initialized = true;
-    console.log(`[DB] Seeded ${this.organizations.length} organizations and ${this.financialRecords.length} financial records`);
+    console.log(
+      `[DB] Seeded ${this.organizations.length} Master Projects, ${this.rawLedgerRecords.length} Actual Ledger records (Col A:Q), and ${this.financialRecords.length} financial matrix records`
+    );
   }
 
   public getOrganizations(): OrgRecord[] {
@@ -25,6 +38,11 @@ class DatabaseEngine {
   }
 
   public getFilterTree() {
+    const businesses = Array.from(new Set(this.organizations.map((o) => o.business))).sort();
+    const sitesList = Array.from(new Set(this.organizations.map((o) => o.sites))).sort();
+    const towers = Array.from(new Set(this.organizations.map((o) => o.tower))).sort();
+    const industries = Array.from(new Set(this.organizations.map((o) => o.industry))).sort();
+    const jobCodes = Array.from(new Set(this.organizations.map((o) => o.jobCode))).sort();
     const reportingGroups = Array.from(new Set(this.organizations.map((o) => o.reportingGroup))).sort();
     const groups = Array.from(new Set(this.organizations.map((o) => o.groupName))).sort();
     const units = Array.from(new Set(this.organizations.map((o) => o.unitName))).sort();
@@ -33,6 +51,11 @@ class DatabaseEngine {
     const years = [2026, 2025];
 
     return {
+      businesses: ['ALL', ...businesses],
+      sitesList: ['ALL', ...sitesList],
+      towers: ['ALL', ...towers],
+      industries: ['ALL', ...industries],
+      jobCodes: ['ALL', ...jobCodes],
       reportingGroups: ['ALL', ...reportingGroups],
       groups: ['ALL', ...groups],
       units: ['ALL', ...units],
@@ -45,6 +68,11 @@ class DatabaseEngine {
 
   // Filter matched organization IDs
   private getMatchingOrgIds(filters: {
+    business?: string;
+    sites?: string;
+    tower?: string;
+    industry?: string;
+    jobCode?: string;
     reportingGroup?: string;
     group?: string;
     unit?: string;
@@ -52,31 +80,137 @@ class DatabaseEngine {
     project?: string;
   }): Set<number> {
     const matching = this.organizations.filter((org) => {
-      if (filters.reportingGroup && filters.reportingGroup !== 'ALL' && org.reportingGroup !== filters.reportingGroup) {
-        return false;
-      }
-      if (filters.group && filters.group !== 'ALL' && org.groupName !== filters.group) {
-        return false;
-      }
-      if (filters.unit && filters.unit !== 'ALL' && org.unitName !== filters.unit) {
-        return false;
-      }
-      if (filters.opg && filters.opg !== 'ALL' && org.opgName !== filters.opg) {
-        return false;
-      }
-      if (filters.project && filters.project !== 'ALL' && org.projectName !== filters.project) {
-        return false;
-      }
+      if (filters.business && filters.business !== 'ALL' && org.business !== filters.business) return false;
+      if (filters.sites && filters.sites !== 'ALL' && org.sites !== filters.sites) return false;
+      if (filters.tower && filters.tower !== 'ALL' && org.tower !== filters.tower) return false;
+      if (filters.industry && filters.industry !== 'ALL' && org.industry !== filters.industry) return false;
+      if (filters.jobCode && filters.jobCode !== 'ALL' && org.jobCode !== filters.jobCode) return false;
+      if (filters.reportingGroup && filters.reportingGroup !== 'ALL' && org.reportingGroup !== filters.reportingGroup) return false;
+      if (filters.group && filters.group !== 'ALL' && org.groupName !== filters.group) return false;
+      if (filters.unit && filters.unit !== 'ALL' && org.unitName !== filters.unit) return false;
+      if (filters.opg && filters.opg !== 'ALL' && org.opgName !== filters.opg) return false;
+      if (filters.project && filters.project !== 'ALL' && org.projectName !== filters.project) return false;
       return true;
     });
 
     return new Set(matching.map((o) => o.id));
   }
 
-  public calculateAchievement(actual: number, budget: number, direction: 'higher_is_better' | 'lower_is_better' = 'higher_is_better') {
+  // Query DBeaver Raw Data (Columns A:Q)
+  public getRawLedger(query: {
+    page?: number;
+    pageSize?: number;
+    search?: string;
+    year?: number;
+    month?: string | number;
+    business?: string;
+    sites?: string;
+    tower?: string;
+    industry?: string;
+    jobCode?: string;
+    cat?: string;
+    cost?: string;
+    unit?: string;
+    opg?: string;
+  }) {
+    const page = Math.max(1, Number(query.page) || 1);
+    const pageSize = Math.max(1, Math.min(500, Number(query.pageSize) || 50));
+    const year = Number(query.year) || 2026;
+    const searchLower = (query.search || '').trim().toLowerCase();
+
+    let filtered = this.rawLedgerRecords.filter((r) => {
+      if (r.year !== year) return false;
+      if (query.month && query.month !== 'ALL') {
+        const mNum = Number(query.month);
+        if (!isNaN(mNum) && r.monthNum !== mNum) return false;
+      }
+      if (query.business && query.business !== 'ALL' && r.col_A_business !== query.business) return false;
+      if (query.sites && query.sites !== 'ALL' && r.col_C_sites !== query.sites) return false;
+      if (query.tower && query.tower !== 'ALL' && r.col_D_tower !== query.tower) return false;
+      if (query.industry && query.industry !== 'ALL' && r.col_P_industry !== query.industry) return false;
+      if (query.jobCode && query.jobCode !== 'ALL' && r.col_F_jobCode !== query.jobCode) return false;
+      if (query.cat && query.cat !== 'ALL' && r.col_M_cat !== query.cat) return false;
+      if (query.cost && query.cost !== 'ALL' && r.col_L_cost !== query.cost) return false;
+      if (query.unit && query.unit !== 'ALL' && r.col_O_unit !== query.unit) return false;
+      if (query.opg && query.opg !== 'ALL' && r.col_N_operationGroup !== query.opg) return false;
+
+      if (searchLower) {
+        const rowMatch =
+          r.col_A_business.toLowerCase().includes(searchLower) ||
+          r.col_C_sites.toLowerCase().includes(searchLower) ||
+          r.col_D_tower.toLowerCase().includes(searchLower) ||
+          r.col_F_jobCode.toLowerCase().includes(searchLower) ||
+          r.col_G_jobName.toLowerCase().includes(searchLower) ||
+          r.col_H_coa.toLowerCase().includes(searchLower) ||
+          r.col_I_accountName.toLowerCase().includes(searchLower) ||
+          r.col_J_description.toLowerCase().includes(searchLower) ||
+          r.col_N_operationGroup.toLowerCase().includes(searchLower) ||
+          r.col_O_unit.toLowerCase().includes(searchLower) ||
+          r.col_P_industry.toLowerCase().includes(searchLower) ||
+          r.col_Q_sources.toLowerCase().includes(searchLower);
+        if (!rowMatch) return false;
+      }
+
+      return true;
+    });
+
+    const total = filtered.length;
+    const totalPages = Math.ceil(total / pageSize) || 1;
+    const startIndex = (page - 1) * pageSize;
+    const paginatedRows = filtered.slice(startIndex, startIndex + pageSize);
+
+    let totalAmount = 0;
+    let totalSales = 0;
+    let totalDirectCost = 0;
+    let totalIndirectCost = 0;
+    const uniqueJobCodes = new Set<string>();
+    const uniqueSites = new Set<string>();
+    const uniqueTowers = new Set<string>();
+    const uniqueBusinesses = new Set<string>();
+
+    for (const r of filtered) {
+      totalAmount += r.col_K_amount;
+      if (r.col_H_coa === '400000') {
+        totalSales += r.col_K_amount;
+      } else if (r.col_L_cost === 'Direct Cost') {
+        totalDirectCost += r.col_K_amount;
+      } else if (r.col_L_cost === 'Indirect Cost') {
+        totalIndirectCost += r.col_K_amount;
+      }
+      uniqueJobCodes.add(r.col_F_jobCode);
+      uniqueSites.add(r.col_C_sites);
+      uniqueTowers.add(r.col_D_tower);
+      uniqueBusinesses.add(r.col_A_business);
+    }
+
+    return {
+      rows: paginatedRows,
+      total,
+      page,
+      pageSize,
+      totalPages,
+      stats: {
+        totalRecords: total,
+        totalAmount,
+        totalSales,
+        totalDirectCost,
+        totalIndirectCost,
+        uniqueJobCodes: uniqueJobCodes.size,
+        uniqueSites: uniqueSites.size,
+        uniqueTowers: uniqueTowers.size,
+        uniqueBusinesses: uniqueBusinesses.size,
+      },
+    };
+  }
+
+  public calculateAchievement(
+    actual: number,
+    budget: number,
+    direction: 'higher_is_better' | 'lower_is_better' = 'higher_is_better'
+  ) {
     if (budget === 0) {
       return {
-        achievement: actual > 0 ? 100 : 0,
+        achievement: actual === 0 ? 100 : actual > 0 ? 100 : 0,
         variance: actual,
         isFavorable: direction === 'higher_is_better' ? actual >= 0 : actual <= 0,
       };
@@ -94,6 +228,11 @@ class DatabaseEngine {
   public getDashboardData(filters: {
     year?: number;
     month?: string | number;
+    business?: string;
+    sites?: string;
+    tower?: string;
+    industry?: string;
+    jobCode?: string;
     reportingGroup?: string;
     group?: string;
     unit?: string;
@@ -104,7 +243,6 @@ class DatabaseEngine {
     const matchingOrgIds = this.getMatchingOrgIds(filters);
     const selectedMonth = filters.month && filters.month !== 'ALL' ? Number(filters.month) : null;
 
-    // Filter relevant records
     const relevantRecords = this.financialRecords.filter((rec) => {
       if (rec.year !== year) return false;
       if (!matchingOrgIds.has(rec.organizationId)) return false;
@@ -112,7 +250,6 @@ class DatabaseEngine {
       return true;
     });
 
-    // Helper to sum metric
     const sumMetric = (category: string, metric: string, recordsList = relevantRecords) => {
       let actual = 0;
       let budget = 0;
@@ -125,14 +262,13 @@ class DatabaseEngine {
       return { actual, budget };
     };
 
-    // Calculate Summary KPIs
     const sales = sumMetric('ALL', 'sales');
     const totalCost = sumMetric('ALL', 'total_cost');
     const hrCost = sumMetric('ALL', 'hr_cost');
     const facilityCost = sumMetric('ALL', 'facility_cost');
     const otherCost = sumMetric('ALL', 'other_cost');
-    const directCost = sumMetric('DIRECT_COST', 'direct_cost');
-    const indirectCost = sumMetric('INDIRECT_COST', 'indirect_cost');
+    const directCost = sumMetric('DIRECT_COST', 'total_direct_cost');
+    const indirectCost = sumMetric('INDIRECT_COST', 'total_indirect_cost');
 
     const grossProfitActual = sales.actual - totalCost.actual;
     const grossProfitBudget = sales.budget - totalCost.budget;
@@ -151,7 +287,6 @@ class DatabaseEngine {
     const dpMarginActual = sales.actual > 0 ? parseFloat(((directProfitActual / sales.actual) * 100).toFixed(2)) : 0;
     const dpMarginBudget = sales.budget > 0 ? parseFloat(((directProfitBudget / sales.budget) * 100).toFixed(2)) : 0;
 
-    // Monthly Trend Data for Charts (Jan - Dec)
     const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
     const monthlyTrend = [];
 
@@ -165,8 +300,8 @@ class DatabaseEngine {
       const monthRecs = fullYearRecords.filter((r) => r.month === m);
       const mSales = sumMetric('ALL', 'sales', monthRecs);
       const mCost = sumMetric('ALL', 'total_cost', monthRecs);
-      const mDirectCost = sumMetric('DIRECT_COST', 'direct_cost', monthRecs);
-      const mIndirectCost = sumMetric('INDIRECT_COST', 'indirect_cost', monthRecs);
+      const mDirectCost = sumMetric('DIRECT_COST', 'total_direct_cost', monthRecs);
+      const mIndirectCost = sumMetric('INDIRECT_COST', 'total_indirect_cost', monthRecs);
       const mProfitActual = mSales.actual - mCost.actual;
       const mProfitBudget = mSales.budget - mCost.budget;
 
@@ -196,7 +331,6 @@ class DatabaseEngine {
       });
     }
 
-    // Group Scorecard breakdown
     const groupScorecards = this.calculateGroupScorecards(year, selectedMonth);
 
     return {
@@ -275,10 +409,10 @@ class DatabaseEngine {
   }
 
   private calculateGroupScorecards(year: number, selectedMonth: number | null) {
-    const groups = Array.from(new Set(this.organizations.map((o) => o.groupName)));
+    const businesses = Array.from(new Set(this.organizations.map((o) => o.business)));
 
-    return groups.map((grpName) => {
-      const orgIds = new Set(this.organizations.filter((o) => o.groupName === grpName).map((o) => o.id));
+    return businesses.map((bizName) => {
+      const orgIds = new Set(this.organizations.filter((o) => o.business === bizName).map((o) => o.id));
       const recs = this.financialRecords.filter((r) => {
         if (r.year !== year || !orgIds.has(r.organizationId)) return false;
         if (selectedMonth !== null && r.month !== selectedMonth) return false;
@@ -307,7 +441,7 @@ class DatabaseEngine {
       const costAch = this.calculateAchievement(costAct, costBud, 'lower_is_better');
 
       return {
-        groupName: grpName,
+        groupName: bizName,
         sales: { actual: salesAct, budget: salesBud, ach: salesAch.achievement, isFavorable: salesAch.isFavorable },
         cost: { actual: costAct, budget: costBud, ach: costAch.achievement, isFavorable: costAch.isFavorable },
         profit: { actual: gpAct, budget: gpBud, ach: profitAch.achievement, isFavorable: profitAch.isFavorable },
@@ -316,9 +450,13 @@ class DatabaseEngine {
     });
   }
 
-  // Get full 12-month spreadsheet breakdown matrix matching the Excel hierarchy exactly
   public getFinancialMatrix(filters: {
     year?: number;
+    business?: string;
+    sites?: string;
+    tower?: string;
+    industry?: string;
+    jobCode?: string;
     reportingGroup?: string;
     group?: string;
     unit?: string;
@@ -334,16 +472,19 @@ class DatabaseEngine {
 
     const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
-    // Helper to calculate row across 12 months + Full Year
     const buildRow = (
       category: 'ALL' | 'DIRECT_COST' | 'INDIRECT_COST',
       subcategory: string,
       metricKey: string,
       direction: 'higher_is_better' | 'lower_is_better',
+      groupLabel?: string,
       isCustomDerived: boolean = false,
       derivedCalculator?: (monthIndex: number | 'fullYear') => { actual: number; budget: number; isPercentage?: boolean }
     ) => {
-      const monthsData: Record<number, { actual: number; budget: number; achievement: number; variance: number; isFavorable: boolean }> = {};
+      const monthsData: Record<
+        number,
+        { actual: number; budget: number; achievement: number; variance: number; isFavorable: boolean }
+      > = {};
       let fullYearActual = 0;
       let fullYearBudget = 0;
 
@@ -389,10 +530,11 @@ class DatabaseEngine {
 
       return {
         category,
+        groupLabel: groupLabel || (category === 'ALL' ? 'All' : category === 'DIRECT_COST' ? 'Direct Cost' : 'Indirect Cost'),
         subcategory,
         metric: metricKey,
         direction,
-        isPercentage: metricKey.includes('percentage'),
+        isPercentage: metricKey.includes('percentage') || metricKey.includes('margin') || subcategory.startsWith('%'),
         fullYear: {
           actual: fullYearActual,
           budget: fullYearBudget,
@@ -404,7 +546,6 @@ class DatabaseEngine {
       };
     };
 
-    // Pre-aggregate base metric totals per month for fast derived calculation
     const getMonthTotal = (cat: string, met: string, m: number | 'fullYear') => {
       let act = 0;
       let bud = 0;
@@ -419,19 +560,46 @@ class DatabaseEngine {
       return { act, bud };
     };
 
-    // 1. ALL Section
-    const allRows = [
-      buildRow('ALL', 'Sales', 'sales', 'higher_is_better'),
-      buildRow('ALL', 'HR Cost', 'hr_cost', 'lower_is_better'),
-      buildRow('ALL', 'Facility Cost', 'facility_cost', 'lower_is_better'),
-      buildRow('ALL', 'Other Cost', 'other_cost', 'lower_is_better'),
-      buildRow('ALL', 'Total Cost', 'total_cost', 'lower_is_better'),
-      buildRow('ALL', 'GP (Gross Profit)', 'gross_profit', 'higher_is_better', true, (m) => {
+    // ==========================================
+    // 1. TABLE 1: SUMMARY (All, Direct Cost, Indirect Cost)
+    // ==========================================
+    const table1Rows = [
+      // Block 1: All
+      buildRow('ALL', 'Sales', 'sales', 'higher_is_better', 'All'),
+      buildRow('ALL', 'Cost', 'total_cost', 'lower_is_better', 'All'),
+      buildRow('ALL', 'Profit', 'gross_profit', 'higher_is_better', 'All', true, (m) => {
         const s = getMonthTotal('ALL', 'sales', m);
         const c = getMonthTotal('ALL', 'total_cost', m);
         return { actual: s.act - c.act, budget: s.bud - c.bud };
       }),
-      buildRow('ALL', 'GP %', 'gross_profit_percentage', 'higher_is_better', true, (m) => {
+      // Block 2: Direct Cost
+      buildRow('DIRECT_COST', 'Sales', 'direct_sales', 'higher_is_better', 'Direct Cost'),
+      buildRow('DIRECT_COST', 'Cost', 'total_direct_cost', 'lower_is_better', 'Direct Cost'),
+      buildRow('DIRECT_COST', 'Profit', 'direct_profit', 'higher_is_better', 'Direct Cost', true, (m) => {
+        const s = getMonthTotal('DIRECT_COST', 'direct_sales', m);
+        const dc = getMonthTotal('DIRECT_COST', 'total_direct_cost', m);
+        return { actual: s.act - dc.act, budget: s.bud - dc.bud };
+      }),
+      // Block 3: Indirect Cost
+      buildRow('INDIRECT_COST', 'Cost', 'total_indirect_cost', 'lower_is_better', 'Indirect Cost'),
+    ];
+
+    // ==========================================
+    // 2. TABLE 2: OVERVIEW (All, Direct Cost, Indirect Cost - HR, Facility, Other, Margins)
+    // ==========================================
+    const table2Rows = [
+      // Block 1: All
+      buildRow('ALL', 'Sales', 'sales', 'higher_is_better', 'All'),
+      buildRow('ALL', 'HR Cost', 'hr_cost', 'lower_is_better', 'All'),
+      buildRow('ALL', 'Facility Cost', 'facility_cost', 'lower_is_better', 'All'),
+      buildRow('ALL', 'Other Cost', 'other_cost', 'lower_is_better', 'All'),
+      buildRow('ALL', 'Total Cost', 'total_cost', 'lower_is_better', 'All'),
+      buildRow('ALL', 'GP (Gross Profit)', 'gross_profit_ov', 'higher_is_better', 'All', true, (m) => {
+        const s = getMonthTotal('ALL', 'sales', m);
+        const c = getMonthTotal('ALL', 'total_cost', m);
+        return { actual: s.act - c.act, budget: s.bud - c.bud };
+      }),
+      buildRow('ALL', '%GP', '%gp', 'higher_is_better', 'All', true, (m) => {
         const s = getMonthTotal('ALL', 'sales', m);
         const c = getMonthTotal('ALL', 'total_cost', m);
         const actGp = s.act - c.act;
@@ -440,37 +608,106 @@ class DatabaseEngine {
         const budPct = s.bud > 0 ? (budGp / s.bud) * 100 : 0;
         return { actual: parseFloat(actPct.toFixed(2)), budget: parseFloat(budPct.toFixed(2)), isPercentage: true };
       }),
-    ];
 
-    // 2. DIRECT COST Section
-    const directCostRows = [
-      buildRow('DIRECT_COST', 'Sales', 'sales', 'higher_is_better'),
-      buildRow('DIRECT_COST', 'HR Cost', 'hr_cost', 'lower_is_better'),
-      buildRow('DIRECT_COST', 'Facility Cost', 'facility_cost', 'lower_is_better'),
-      buildRow('DIRECT_COST', 'Other Cost', 'other_cost', 'lower_is_better'),
-      buildRow('DIRECT_COST', 'Total Direct Cost', 'direct_cost', 'lower_is_better'),
-      buildRow('DIRECT_COST', 'DP (Direct Profit)', 'direct_profit', 'higher_is_better', true, (m) => {
-        const s = getMonthTotal('DIRECT_COST', 'sales', m);
-        const dc = getMonthTotal('DIRECT_COST', 'direct_cost', m);
+      // Block 2: Direct Cost
+      buildRow('DIRECT_COST', 'Sales', 'direct_sales', 'higher_is_better', 'Direct Cost'),
+      buildRow('DIRECT_COST', 'HR Cost', 'direct_hr_cost', 'lower_is_better', 'Direct Cost'),
+      buildRow('DIRECT_COST', 'Facility Cost', 'direct_facility_cost', 'lower_is_better', 'Direct Cost'),
+      buildRow('DIRECT_COST', 'Other Cost', 'direct_other_cost', 'lower_is_better', 'Direct Cost'),
+      buildRow('DIRECT_COST', 'Total Cost (Direct Cost)', 'total_direct_cost', 'lower_is_better', 'Direct Cost'),
+      buildRow('DIRECT_COST', 'DP (Direct Profit)', 'direct_profit_ov', 'higher_is_better', 'Direct Cost', true, (m) => {
+        const s = getMonthTotal('DIRECT_COST', 'direct_sales', m);
+        const dc = getMonthTotal('DIRECT_COST', 'total_direct_cost', m);
         return { actual: s.act - dc.act, budget: s.bud - dc.bud };
       }),
-      buildRow('DIRECT_COST', 'DP %', 'direct_profit_percentage', 'higher_is_better', true, (m) => {
-        const s = getMonthTotal('DIRECT_COST', 'sales', m);
-        const dc = getMonthTotal('DIRECT_COST', 'direct_cost', m);
+      buildRow('DIRECT_COST', '%DP', '%dp', 'higher_is_better', 'Direct Cost', true, (m) => {
+        const s = getMonthTotal('DIRECT_COST', 'direct_sales', m);
+        const dc = getMonthTotal('DIRECT_COST', 'total_direct_cost', m);
         const actDp = s.act - dc.act;
         const budDp = s.bud - dc.bud;
         const actPct = s.act > 0 ? (actDp / s.act) * 100 : 0;
         const budPct = s.bud > 0 ? (budDp / s.bud) * 100 : 0;
         return { actual: parseFloat(actPct.toFixed(2)), budget: parseFloat(budPct.toFixed(2)), isPercentage: true };
       }),
+
+      // Block 3: Indirect Cost
+      buildRow('INDIRECT_COST', 'HR Cost', 'indirect_hr_cost', 'lower_is_better', 'Indirect Cost'),
+      buildRow('INDIRECT_COST', 'Facility Cost', 'indirect_facility_cost', 'lower_is_better', 'Indirect Cost'),
+      buildRow('INDIRECT_COST', 'Other Cost', 'indirect_other_cost', 'lower_is_better', 'Indirect Cost'),
+      buildRow('INDIRECT_COST', 'Total Cost (Indirect Cost)', 'total_indirect_cost', 'lower_is_better', 'Indirect Cost'),
     ];
 
-    // 3. INDIRECT COST Section
-    const indirectCostRows = [
-      buildRow('INDIRECT_COST', 'HR Cost', 'hr_cost', 'lower_is_better'),
-      buildRow('INDIRECT_COST', 'Facility Cost', 'facility_cost', 'lower_is_better'),
-      buildRow('INDIRECT_COST', 'Other Cost', 'other_cost', 'lower_is_better'),
-      buildRow('INDIRECT_COST', 'Total Indirect Cost', 'indirect_cost', 'lower_is_better'),
+    // ==========================================
+    // 3. TABLE 3: CATEGORY DIRECT COST DETAIL
+    // ==========================================
+    const table3Rows = [
+      buildRow('DIRECT_COST', 'Sales', 'direct_sales', 'higher_is_better', 'Direct Cost'),
+      // HR Cost (15 items)
+      ...DIRECT_HR_EXPENSE_ITEMS.map((item) =>
+        buildRow(
+          'DIRECT_COST',
+          item.name,
+          `direct_hr_${item.name.toLowerCase().replace(/[^a-z0-9]/g, '_')}`,
+          'lower_is_better',
+          'HR Cost'
+        )
+      ),
+      // Facility Cost (9 items)
+      ...DIRECT_FACILITY_EXPENSE_ITEMS.map((item) =>
+        buildRow(
+          'DIRECT_COST',
+          item.name,
+          `direct_facility_${item.name.toLowerCase().replace(/[^a-z0-9]/g, '_')}`,
+          'lower_is_better',
+          'Facility Cost'
+        )
+      ),
+      // Others Cost (18 items)
+      ...DIRECT_OTHERS_EXPENSE_ITEMS.map((item) =>
+        buildRow(
+          'DIRECT_COST',
+          item.name,
+          `direct_others_${item.name.toLowerCase().replace(/[^a-z0-9]/g, '_')}`,
+          'lower_is_better',
+          'Others Cost'
+        )
+      ),
+    ];
+
+    // ==========================================
+    // 4. TABLE 4: CATEGORY INDIRECT COST DETAIL
+    // ==========================================
+    const table4Rows = [
+      // HR Cost (15 items)
+      ...INDIRECT_HR_EXPENSE_ITEMS.map((item) =>
+        buildRow(
+          'INDIRECT_COST',
+          item.name,
+          `indirect_hr_${item.name.toLowerCase().replace(/[^a-z0-9]/g, '_')}`,
+          'lower_is_better',
+          'HR Cost'
+        )
+      ),
+      // Facility Cost (9 items)
+      ...INDIRECT_FACILITY_EXPENSE_ITEMS.map((item) =>
+        buildRow(
+          'INDIRECT_COST',
+          item.name,
+          `indirect_facility_${item.name.toLowerCase().replace(/[^a-z0-9]/g, '_')}`,
+          'lower_is_better',
+          'Facility Cost'
+        )
+      ),
+      // Others Cost (18 items)
+      ...INDIRECT_OTHERS_EXPENSE_ITEMS.map((item) =>
+        buildRow(
+          'INDIRECT_COST',
+          item.name,
+          `indirect_others_${item.name.toLowerCase().replace(/[^a-z0-9]/g, '_')}`,
+          'lower_is_better',
+          'Others Cost'
+        )
+      ),
     ];
 
     return {
@@ -478,19 +715,24 @@ class DatabaseEngine {
       monthNames: monthNames.map((n, i) => ({ month: i + 1, name: `${n}-${String(year).slice(-2)}`, short: n })),
       sections: [
         {
-          key: 'ALL',
-          title: 'ALL (Overview & Total Operations)',
-          rows: allRows,
+          key: 'ALL' as const,
+          title: '1. Summary (All, Direct Cost, Indirect Cost)',
+          rows: table1Rows,
         },
         {
-          key: 'DIRECT_COST',
-          title: 'DIRECT COST (Project & Delivery Execution)',
-          rows: directCostRows,
+          key: 'ALL' as const,
+          title: '2. Overview (All, Direct Cost, Indirect Cost - HR, Facility, Other, Margins)',
+          rows: table2Rows,
         },
         {
-          key: 'INDIRECT_COST',
-          title: 'INDIRECT COST (Overhead, Shared Services & Admin)',
-          rows: indirectCostRows,
+          key: 'DIRECT_COST' as const,
+          title: '3. Category: Direct Cost (Sales, HR, Facility, Others Cost Detail)',
+          rows: table3Rows,
+        },
+        {
+          key: 'INDIRECT_COST' as const,
+          title: '4. Category: Indirect Cost (HR, Facility, Others Cost Detail)',
+          rows: table4Rows,
         },
       ],
     };
