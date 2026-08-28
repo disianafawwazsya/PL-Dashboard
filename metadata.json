@@ -1,0 +1,6 @@
+{
+  "name": "Financial Performance Dashboard",
+  "description": "Enterprise financial performance monitoring dashboard with Actual vs Budget comparisons, dynamic organizational hierarchy filtering, monthly breakdowns, and KPI analytics.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

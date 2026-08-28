@@ -1,0 +1,47 @@
+// Prisma Schema for Financial Performance Monitoring System
+// Database: PostgreSQL
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Organization {
+  id              Int                    @id @default(autoincrement())
+  reportingGroup  String                 @map("reporting_group") @db.VarChar(100)
+  groupName       String                 @map("group_name") @db.VarChar(100)
+  unitName        String                 @map("unit_name") @db.VarChar(100)
+  opgName         String                 @map("opg_name") @db.VarChar(100)
+  projectName     String                 @map("project_name") @db.VarChar(150)
+  createdAt       DateTime               @default(now()) @map("created_at")
+  updatedAt       DateTime               @updatedAt @map("updated_at")
+  financialData   FinancialPerformance[]
+
+  @@index([reportingGroup, groupName, unitName, opgName, projectName])
+  @@map("organization")
+}
+
+model FinancialPerformance {
+  id                    Int          @id @default(autoincrement())
+  organizationId        Int          @map("organization_id")
+  year                  Int
+  month                 Int          // 1-12
+  category              String       @db.VarChar(50)   // ALL, DIRECT_COST, INDIRECT_COST
+  subcategory           String       @db.VarChar(100)  // Sales, HR Cost, Facility Cost, Other Cost, etc.
+  metric                String       @db.VarChar(100)  // sales, hr_cost, facility_cost, other_cost, total_cost, gross_profit, gross_profit_percentage, direct_cost, direct_profit, direct_profit_percentage, indirect_cost
+  actualAmount          BigInt       @map("actual_amount")
+  budgetAmount          BigInt       @map("budget_amount")
+  achievementDirection  String       @default("higher_is_better") @map("achievement_direction") @db.VarChar(30) // higher_is_better, lower_is_better
+  createdAt             DateTime     @default(now()) @map("created_at")
+  updatedAt             DateTime     @updatedAt @map("updated_at")
+
+  organization          Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([year, month, category, metric])
+  @@index([organizationId, year, month])
+  @@map("financial_performance")
+}
